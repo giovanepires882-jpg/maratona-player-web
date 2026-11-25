@@ -216,6 +216,26 @@ dialog::backdrop{background:rgba(24,32,46,.55)}
 
 <dialog id="dlg"><p id="dlgTexto" style="margin:0"></p><div id="dlgCampoWrap" hidden><input id="dlgCampo" class="campo" maxlength="40" style="margin-top:12px"></div>
   <div class="acoes"><button id="dlgSim" class="btn" type="button">Confirmar</button><button id="dlgNao" class="btn sec" type="button">Cancelar</button></div></dialog>
+<dialog id="dlgPag" aria-labelledby="pagTitulo">
+  <h2 id="pagTitulo" style="margin:0 0 4px"></h2>
+  <p id="pagSub" class="suave" style="font-size:.92rem"></p>
+  <div id="pagEscolha">
+    <div class="acoes" style="flex-direction:column;margin-top:8px">
+      <button id="pagBtnPix" class="btn" type="button">Pagar com Pix</button>
+      <button id="pagBtnCartao" class="btn sec" type="button">Pagar com cartão</button>
+    </div>
+    <p class="dica">Pix: o QR Code aparece aqui e a TV libera assim que o pagamento cai. Cartão: você vai para a página do Mercado Pago.</p>
+  </div>
+  <div id="pagPix" hidden style="text-align:center">
+    <img id="pagQr" alt="QR Code Pix" width="220" height="220" style="display:block;margin:8px auto;image-rendering:pixelated">
+    <label class="rot" for="pagCopia" style="text-align:left">Pix copia e cola</label>
+    <textarea id="pagCopia" class="campo mono" rows="3" readonly style="font-size:.78rem;resize:none"></textarea>
+    <div class="acoes" style="margin-top:10px"><button id="pagCopiar" class="btn" type="button">Copiar código</button></div>
+    <p id="pagStatus" class="avisomsg" style="margin-top:14px;text-align:left"></p>
+  </div>
+  <p id="pagErro" class="erro" role="alert"></p>
+  <div class="acoes" style="margin-top:12px"><button id="pagFechar" class="btn sec" type="button">Fechar</button></div>
+</dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -497,17 +517,59 @@ dialog::backdrop{background:rgba(24,32,46,.55)}
     });
   };
   function pagar(a, p, b) {
-    confirmar('Pagar ' + reais(p.valor) + ' (' + p.nome + ') para ' + (a.nome || a.id) + '? Você vai para a página do Mercado Pago (Pix ou cartão).', 'Ir para o pagamento').then(function (ok) {
-      if (!ok) return;
-      b.disabled = true; $('erroPagar').textContent = '';
+    var d = $('dlgPag'); $('pagTitulo').textContent = p.nome + ' · ' + reais(p.valor);
+    $('pagSub').textContent = 'Dispositivo ' + (a.nome ? a.nome + ' (' + a.id + ')' : a.id);
+    $('pagEscolha').hidden = false; $('pagPix').hidden = true; $('pagErro').textContent = '';
+    d.showModal();
+    $('pagBtnPix').onclick = function () { gerarPix(a, p); };
+    $('pagBtnCartao').onclick = function () {
+      $('pagErro').textContent = ''; this.disabled = true; var bt = this;
       funcao('player-pagamento', { acao: 'criar', mac: a.id, plano: p.codigo }).then(function (r) {
-        b.disabled = false;
-        if (r.erro === 'login') return sessaoExpirou();
-        if (r.ok && r.link) { gravar('mp_pag_mac', a.id); location.href = r.link; return; }
-        $('erroPagar').textContent = msg(r);
+        bt.disabled = false;
+        if (r.erro === 'login') { d.close(); return sessaoExpirou(); }
+        if (r.ok && r.link) { location.href = r.link; return; }
+        $('pagErro').textContent = msg(r);
       });
+    };
+  }
+  var pixTimer = null;
+  function fecharPag() { clearInterval(pixTimer); pixTimer = null; if ($('dlgPag').open) $('dlgPag').close(); }
+  $('pagFechar').onclick = fecharPag;
+  $('dlgPag').addEventListener('close', function () { clearInterval(pixTimer); pixTimer = null; });
+  function gerarPix(a, p) {
+    $('pagErro').textContent = ''; $('pagBtnPix').disabled = true; $('pagBtnPix').textContent = 'Gerando Pix…';
+    var antes = a.ativo_ate || '';
+    funcao('player-pagamento', { acao: 'pix', mac: a.id, plano: p.codigo }).then(function (r) {
+      $('pagBtnPix').disabled = false; $('pagBtnPix').textContent = 'Pagar com Pix';
+      if (r.erro === 'login') { fecharPag(); return sessaoExpirou(); }
+      if (!r.ok || !r.pix) { $('pagErro').textContent = msg(r) + (r.detalhe ? ' (' + r.detalhe + ')' : ''); return; }
+      $('pagEscolha').hidden = true; $('pagPix').hidden = false;
+      $('pagQr').src = 'data:image/png;base64,' + r.pix.qr_base64;
+      $('pagCopia').value = r.pix.copia_cola;
+      $('pagStatus').textContent = 'Aguardando o pagamento… Esta tela atualiza sozinha.';
+      $('pagStatus').className = 'avisomsg';
+      clearInterval(pixTimer); var n = 0;
+      pixTimer = setInterval(function () {
+        if (++n > 180) { clearInterval(pixTimer); $('pagStatus').textContent = 'O Pix expirou. Feche e gere outro.'; return; }
+        rpc('player_painel').then(function (d) {
+          if (!d.ok) return; dados = d;
+          var x = d.aparelhos.filter(function (y) { return y.id === a.id; })[0];
+          if (x && (x.ativo_ate || '') !== antes && x.ativo_ate) {
+            clearInterval(pixTimer);
+            $('pagStatus').textContent = 'Pagamento confirmado! Ativo até ' + data(x.ativo_ate) + '. A TV libera em até 1 minuto.';
+            $('pagStatus').className = 'okmsg';
+            atual = x; desenhar(); if (tela === 'Ap') desenharAp();
+          }
+        });
+      }, 5000);
     });
   }
+  $('pagCopiar').onclick = function () {
+    var t = $('pagCopia'); t.select();
+    var feito = function () { $('pagCopiar').textContent = 'Copiado!'; setTimeout(function () { $('pagCopiar').textContent = 'Copiar código'; }, 2000); };
+    if (navigator.clipboard) navigator.clipboard.writeText(t.value).then(feito, function () { document.execCommand('copy'); feito(); });
+    else { document.execCommand('copy'); feito(); }
+  };
 
   /* ---------- Listas ---------- */
   var editando = null, removerEpg = false;
