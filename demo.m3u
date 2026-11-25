@@ -1,0 +1,13 @@
+#EXTM3U
+#EXTINF:-1 group-title="Demonstração",Canal de teste ao vivo
+https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8
+#EXTINF:-1 group-title="Demonstração",Canal de teste HLS 1
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 group-title="Demonstração",Canal de teste HLS 2
+https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8
+#EXTINF:-1 group-title="Demonstração",Canal de teste HLS 3
+https://test-streams.mux.dev/test_001/stream.m3u8
+#EXTINF:-1 group-title="Filmes livres",Sintel (trailer, Blender Foundation, CC BY)
+https://download.blender.org/durian/trailer/sintel_trailer-480p.mp4
+#EXTINF:-1 group-title="Filmes livres",Tears of Steel (Blender Foundation, CC BY)
+https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov
